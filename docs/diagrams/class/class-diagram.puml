@@ -141,6 +141,11 @@ class EventCalendar {
     + isEmpty(): boolean
 }
 
+note right of EventCalendar
+ОД1 - календарь событий
+для пошагового режима
+end note
+
 class StatisticsCollector {
     - generatedCount: int
     - rejectedCount: int
@@ -157,6 +162,11 @@ class StatisticsCollector {
     + getRejectionProbability(): double
     + buildSummary(): void
 }
+
+note right of StatisticsCollector
+ОР1 - сводная таблица результатов
+в автоматическом режиме
+end note
 
 class Simulation {
     - currentTime: double
