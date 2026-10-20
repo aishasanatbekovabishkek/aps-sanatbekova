@@ -119,10 +119,4 @@ else Все мастера заняты
 
 end
 
-== Завершение ==
-
-Master -> Selection: Обслуживание заявки завершено
-Selection -> Statistics: Зарегистрировать результат
-Statistics --> Selection: Результат сохранён
-
 @enduml
