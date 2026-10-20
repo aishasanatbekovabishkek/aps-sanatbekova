@@ -1,0 +1,206 @@
+@startuml
+
+title Сервисный центр по ремонту бытовой техники\nДиаграмма классов — вариант 16
+
+skinparam classAttributeIconSize 0
+
+class Source {
+    - id: int
+    - generatedCount: int
+
+    + generateRequest(currentTime: double): Request
+    + generateNextInterval(): double
+}
+
+note right of Source
+ИБ — бесконечный источник
+ИЗ2 — равномерный закон
+генерации заявок
+end note
+
+class Request {
+    - sourceId: int
+    - requestNumber: int
+    - generationTime: double
+    - bufferEntryTime: double
+    - serviceStartTime: double
+    - serviceEndTime: double
+    - status: RequestStatus
+
+    + getWaitingTime(): double
+    + getServiceTime(): double
+    + getSystemTime(): double
+}
+
+enum RequestStatus {
+    CREATED
+    BUFFERED
+    IN_SERVICE
+    COMPLETED
+    REJECTED
+}
+
+class PlacementDispatcher {
+    - buffer: Buffer
+    - selectionDispatcher: SelectionDispatcher
+    - statistics: StatisticsCollector
+
+    + handleRequest(request: Request): void
+}
+
+class Buffer {
+    - capacity: int
+    - slots: Request[]
+    - insertionPointer: int
+
+    + putByRing(request: Request): BufferPutResult
+    + replaceOldest(request: Request): Request
+    + takeLIFO(): Request
+    + isEmpty(): boolean
+    + isFull(): boolean
+
+    - findOldest(): Request
+}
+
+note right of Buffer
+Д1ОЗ1 — постановка заявки
+в буфер по кольцу
+
+Д1ОО3 — выбивание
+самой старой заявки
+
+Д2Б2 — выбор заявки
+по принципу LIFO
+end note
+
+enum BufferPutResult {
+    STORED
+    FULL
+}
+
+class SelectionDispatcher {
+    - buffer: Buffer
+    - masterPool: MasterPool
+    - statistics: StatisticsCollector
+
+    + tryStartService(request: Request): boolean
+    + onMasterReleased(master: Master): void
+
+    - selectRequestFromBuffer(): Request
+    - selectFreeMaster(): Master
+}
+
+class MasterPool {
+    - masters: List<Master>
+    - selectionPointer: int
+
+    + findFreeByRing(): Master
+    + hasFreeMaster(): boolean
+}
+
+note right of MasterPool
+Д2П2 — выбор свободного
+прибора по кольцу
+end note
+
+class Master {
+    - id: int
+    - busy: boolean
+    - currentRequest: Request
+    - busyTime: double
+
+    + startService(request: Request, currentTime: double): double
+    + finishService(currentTime: double): Request
+    + isFree(): boolean
+
+    - generateServiceTime(): double
+}
+
+note right of Master
+ПЗ1 — экспоненциальный закон
+времени обслуживания
+end note
+
+class Event {
+    - time: double
+    - type: EventType
+    - request: Request
+    - master: Master
+}
+
+enum EventType {
+    REQUEST_GENERATED
+    SERVICE_COMPLETED
+}
+
+class EventCalendar {
+    - events: PriorityQueue<Event>
+
+    + addEvent(event: Event): void
+    + getNextEvent(): Event
+    + isEmpty(): boolean
+}
+
+class StatisticsCollector {
+    - generatedCount: int
+    - rejectedCount: int
+    - completedCount: int
+    - totalWaitingTime: double
+    - totalServiceTime: double
+
+    + recordGenerated(request: Request): void
+    + recordBuffered(request: Request): void
+    + recordRejected(request: Request): void
+    + recordServiceStart(request: Request): void
+    + recordServiceEnd(request: Request): void
+
+    + getRejectionProbability(): double
+    + buildSummary(): void
+}
+
+class Simulation {
+    - currentTime: double
+    - sources: List<Source>
+    - eventCalendar: EventCalendar
+    - placementDispatcher: PlacementDispatcher
+    - selectionDispatcher: SelectionDispatcher
+    - statistics: StatisticsCollector
+
+    + initialize(): void
+    + step(): void
+    + runStepMode(): void
+    + runAutomaticMode(): void
+
+    - processEvent(event: Event): void
+}
+
+Source --> Request : creates
+Request --> RequestStatus
+
+PlacementDispatcher --> Buffer
+PlacementDispatcher --> SelectionDispatcher
+PlacementDispatcher --> StatisticsCollector
+
+SelectionDispatcher --> Buffer
+SelectionDispatcher --> MasterPool
+SelectionDispatcher --> StatisticsCollector
+
+MasterPool "1" *-- "1..*" Master
+Master --> Request : services
+
+Buffer "1" o-- "0..*" Request
+Buffer --> BufferPutResult
+
+Event --> EventType
+Event --> Request
+Event --> Master
+
+EventCalendar "1" *-- "0..*" Event
+
+Simulation "1" o-- "1..*" Source
+Simulation --> EventCalendar
+Simulation --> PlacementDispatcher
+Simulation --> SelectionDispatcher
+Simulation --> StatisticsCollector
+
+@enduml
