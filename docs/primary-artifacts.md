@@ -115,28 +115,32 @@
 
 ### Sequence diagram
 
-[main-flow.puml](diagrams/sequence/main-flow.puml)
+Исходный файл: [main-flow.puml](diagrams/sequence/main-flow.puml)
 
-Показывает:
-- генерацию заявки;
+![Sequence diagram](diagrams/sequence/main-flow.svg)
+
+На диаграмме показаны:
+- генерация заявки;
 - Happy Flow;
 - поиск свободного мастера;
 - выбор мастера по Д2П2;
-- постановку заявки в буфер по Д1ОЗ1;
+- постановка заявки в буфер по Д1ОЗ1;
 - переполнение буфера;
 - выбивание самой старой заявки по Д1ОО3;
 - выбор заявки из буфера по Д2Б2;
 - освобождение мастера;
-- повторную передачу заявки на обслуживание;
-- фиксацию статистики.
+- повторная передача заявки на обслуживание;
+- фиксация статистики.
 
 ### Диаграмма классов
 
-[class-diagram.puml](diagrams/class/class-diagram.puml)
+Исходный файл: [class-diagram.puml](diagrams/class/class-diagram.puml)
 
-Показывает основные классы системы, их поля, методы и связи.
+![Диаграмма классов](diagrams/class/class-diagram.svg)
 
-В диаграмме отдельно отражены:
+На диаграмме показаны основные классы системы, их поля, методы и связи.
+
+Отдельно отражены:
 - `Buffer` с указателем `insertionPointer`;
 - `MasterPool` с указателем `selectionPointer`;
 - `EventCalendar`;
@@ -146,6 +150,8 @@
 
 ### Flowchart
 
-[system-flow.puml](diagrams/flowchart/system-flow.puml)
+Исходный файл: [system-flow.puml](diagrams/flowchart/system-flow.puml)
 
-Показывает общий алгоритм работы системы, основные альтернативы и распределение действий между источником, статистикой, диспетчерами, буфером и мастерами.
+![Flowchart](diagrams/flowchart/system-flow.svg)
+
+Flowchart показывает общий алгоритм работы системы, основные альтернативы и распределение действий между источником, статистикой, диспетчерами, буфером и мастерами.
