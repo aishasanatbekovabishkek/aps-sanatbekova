@@ -8,6 +8,7 @@ actor "Клиент / Источник" as Source
 control "Диспетчер постановки" as Placement
 queue "Буфер\nОчередь заявок" as Buffer
 control "Диспетчер выбора" as Selection
+participant "Пул мастеров" as MasterPool
 participant "Мастер\n(прибор)" as Master
 control "Сборщик статистики" as Statistics
 
@@ -32,9 +33,14 @@ Source -> Placement: Передать новую заявку
 == Попытка постановки на обслуживание ==
 
 Placement -> Selection: Найти свободного мастера
-Selection -> Selection: Поиск свободного мастера\n[Д2П2 - выбор по кольцу]
+Selection -> MasterPool: Найти свободного мастера\n[Д2П2 - выбор по кольцу]
+
+MasterPool -> MasterPool: Искать свободного мастера,\nначиная с текущего указателя
 
 alt Свободный мастер найден
+
+    MasterPool -> MasterPool: Передвинуть указатель выбора\nна следующую позицию
+    MasterPool --> Selection: Свободный мастер найден
 
     Selection -> Master: Начать обслуживание заявки\n[ПЗ1 - экспоненциальное время]
     Master --> Selection: Заявка принята
@@ -45,6 +51,7 @@ alt Свободный мастер найден
 
 else Все мастера заняты
 
+    MasterPool --> Selection: Свободных мастеров нет
     Selection --> Placement: Свободных мастеров нет
 
     Placement -> Buffer: Поставить заявку в буфер\n[Д1ОЗ1 - постановка по кольцу]
@@ -81,17 +88,34 @@ else Все мастера заняты
     Statistics --> Selection: Событие учтено
 
     Selection -> Buffer: Проверить наличие заявок
-    Buffer --> Selection: В буфере есть заявки
 
-    Selection -> Buffer: Выбрать заявку\n[Д2Б2 - LIFO]
+    alt Буфер не пуст
 
-    Buffer -> Buffer: Найти последнюю поступившую заявку
-    Buffer --> Selection: Выбранная заявка
+        Buffer --> Selection: В буфере есть заявки
 
-    Selection -> Selection: Найти свободного мастера\n[Д2П2 - выбор по кольцу]
+        Selection -> Buffer: Выбрать заявку\n[Д2Б2 - LIFO]
 
-    Selection -> Master: Передать выбранную заявку\nна обслуживание
-    Master --> Selection: Заявка принята
+        Buffer -> Buffer: Найти последнюю поступившую заявку
+        Buffer --> Selection: Выбранная заявка
+
+        Selection -> MasterPool: Найти свободного мастера\n[Д2П2 - выбор по кольцу]
+
+        MasterPool -> MasterPool: Искать свободного мастера,\nначиная с текущего указателя
+        MasterPool -> MasterPool: Передвинуть указатель выбора\nна следующую позицию
+        MasterPool --> Selection: Свободный мастер найден
+
+        Selection -> Master: Передать выбранную заявку\nна обслуживание
+        Master --> Selection: Заявка принята
+
+        Selection -> Statistics: Зарегистрировать начало обслуживания
+        Statistics --> Selection: Событие учтено
+
+    else Буфер пуст
+
+        Buffer --> Selection: Буфер пуст
+        Selection -> Selection: Новых заявок для обслуживания нет
+
+    end
 
 end
 
