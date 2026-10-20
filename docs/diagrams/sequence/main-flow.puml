@@ -1,6 +1,104 @@
 @startuml
 
-title Сервисный центр по ремонту бытовой техники
-Вариант 16 — основной сценарий работы СМО
+title Сервисный центр по ремонту бытовой техники\nВариант 16 — основной сценарий работы СМО
+
+autonumber
+
+actor "Клиент / Источник" as Source
+control "Диспетчер постановки" as Placement
+queue "Буфер\nОчередь заявок" as Buffer
+control "Диспетчер выбора" as Selection
+participant "Мастер\n(прибор)" as Master
+control "Сборщик статистики" as Statistics
+
+note over Source
+ИБ — бесконечный источник
+ИЗ2 — равномерный закон генерации заявок
+end note
+
+note over Master
+ПЗ1 — экспоненциальный закон
+времени обслуживания
+end note
+
+== Генерация новой заявки ==
+
+Source -> Source: Определить интервал до следующей заявки\n[ИЗ2 — равномерный закон]
+Source -> Source: Создать новую заявку
+Source -> Statistics: Зарегистрировать сгенерированную заявку
+Statistics --> Source: Заявка учтена
+Source -> Placement: Передать новую заявку
+
+== Попытка постановки на обслуживание ==
+
+Placement -> Selection: Найти свободного мастера
+Selection -> Selection: Поиск свободного мастера\n[Д2П2 — выбор по кольцу]
+
+alt Свободный мастер найден
+
+    Selection -> Master: Начать обслуживание заявки\n[ПЗ1 — экспоненциальное время]
+    Master --> Selection: Заявка принята
+    Selection --> Placement: Заявка передана мастеру
+
+    Placement -> Statistics: Зарегистрировать начало обслуживания
+    Statistics --> Placement: Событие учтено
+
+else Все мастера заняты
+
+    Selection --> Placement: Свободных мастеров нет
+
+    Placement -> Buffer: Поставить заявку в буфер\n[Д1ОЗ1 — постановка по кольцу]
+
+    Buffer -> Buffer: Искать свободное место,\nначиная с указателя
+
+    alt Свободное место найдено
+
+        Buffer -> Buffer: Поместить заявку\nв найденное место
+        Buffer -> Buffer: Передвинуть указатель\nна следующую позицию
+        Buffer --> Placement: Заявка помещена в буфер
+
+    else Буфер полностью заполнен
+
+        Buffer --> Placement: Свободных мест нет
+        Placement -> Buffer: Выполнить Д1ОО3
+
+        Buffer -> Buffer: Найти самую старую заявку
+        Buffer -> Buffer: Удалить самую старую заявку
+        Buffer -> Buffer: Поместить новую заявку\nна освободившееся место
+
+        Buffer --> Placement: Возвращена выбитая заявка
+
+        Placement -> Statistics: Зарегистрировать отказ выбитой заявки
+        Statistics --> Placement: Отказ учтён
+
+    end
+
+    == Освобождение мастера ==
+
+    Master -> Selection: Обслуживание завершено\nмастер освободился
+
+    Selection -> Statistics: Зарегистрировать завершение обслуживания
+    Statistics --> Selection: Событие учтено
+
+    Selection -> Buffer: Проверить наличие заявок
+    Buffer --> Selection: В буфере есть заявки
+
+    Selection -> Buffer: Выбрать заявку\n[Д2Б2 — LIFO]
+
+    Buffer -> Buffer: Найти последнюю поступившую заявку
+    Buffer --> Selection: Выбранная заявка
+
+    Selection -> Selection: Найти свободного мастера\n[Д2П2 — выбор по кольцу]
+
+    Selection -> Master: Передать выбранную заявку\nна обслуживание
+    Master --> Selection: Заявка принята
+
+end
+
+== Завершение ==
+
+Master -> Selection: Обслуживание заявки завершено
+Selection -> Statistics: Зарегистрировать результат
+Statistics --> Selection: Результат сохранён
 
 @enduml
