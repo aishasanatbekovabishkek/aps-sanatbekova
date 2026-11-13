@@ -1,3 +1,4 @@
+
 @startuml
 
 title Сервисный центр по ремонту бытовой техники\nДиаграмма классов - вариант 16
@@ -15,7 +16,7 @@ class Source {
 note right of Source
 ИБ - бесконечный источник
 ИЗ2 - равномерный закон
-генерации заявок
+интервалов между заявками
 end note
 
 class Request {
@@ -45,7 +46,7 @@ class PlacementDispatcher {
     - selectionDispatcher: SelectionDispatcher
     - statistics: StatisticsCollector
 
-    + handleRequest(request: Request): void
+    + handleRequest(request: Request, currentTime: double): void
 }
 
 class Buffer {
@@ -53,24 +54,24 @@ class Buffer {
     - slots: Request[]
     - insertionPointer: int
 
-    + putByRing(request: Request): BufferPutResult
-    + replaceOldest(request: Request): Request
+    + putByRing(request: Request, currentTime: double): BufferPutResult
+    + replaceOldest(request: Request, currentTime: double): Request
     + takeLIFO(): Request
     + isEmpty(): boolean
     + isFull(): boolean
+    + getRequests(): List~Request~
+    + getInsertionPointer(): int
 
     - findOldest(): Request
 }
 
 note right of Buffer
-Д1ОЗ1 - постановка заявки
-в буфер по кольцу
+Д1ОЗ1 - постановка по кольцу
 
-Д1ОО3 - выбивание
-самой старой заявки
+Д1ОО3 - удаление самой
+старой заявки при переполнении
 
-Д2Б2 - выбор заявки
-по принципу LIFO
+Д2Б2 - выбор по LIFO
 end note
 
 enum BufferPutResult {
@@ -81,21 +82,25 @@ enum BufferPutResult {
 class SelectionDispatcher {
     - buffer: Buffer
     - masterPool: MasterPool
+    - eventCalendar: EventCalendar
     - statistics: StatisticsCollector
 
-    + tryStartService(request: Request): boolean
-    + onMasterReleased(master: Master): void
+    + tryStartService(request: Request, currentTime: double): boolean
+    + onMasterReleased(master: Master, currentTime: double): void
 
     - selectRequestFromBuffer(): Request
     - selectFreeMaster(): Master
+    - scheduleServiceCompletion(master: Master, request: Request, completionTime: double): void
 }
 
 class MasterPool {
-    - masters: List<Master>
+    - masters: List~Master~
     - selectionPointer: int
 
     + findFreeByRing(): Master
     + hasFreeMaster(): boolean
+    + getMasters(): List~Master~
+    + getSelectionPointer(): int
 }
 
 note right of MasterPool
@@ -112,6 +117,8 @@ class Master {
     + startService(request: Request, currentTime: double): double
     + finishService(currentTime: double): Request
     + isFree(): boolean
+    + getCurrentRequest(): Request
+    + getId(): int
 
     - generateServiceTime(): double
 }
@@ -134,7 +141,7 @@ enum EventType {
 }
 
 class EventCalendar {
-    - events: PriorityQueue<Event>
+    - events: PriorityQueue~Event~
 
     + addEvent(event: Event): void
     + getNextEvent(): Event
@@ -142,8 +149,11 @@ class EventCalendar {
 }
 
 note right of EventCalendar
-ОД1 - календарь событий
-для пошагового режима
+Хранит будущие события
+в порядке модельного времени.
+
+Используется в пошаговом
+и автоматическом режимах.
 end note
 
 class StatisticsCollector {
@@ -160,28 +170,39 @@ class StatisticsCollector {
     + recordServiceEnd(request: Request): void
 
     + getRejectionProbability(): double
-    + buildSummary(): void
+    + buildSummary(): SummaryReport
 }
 
-note right of StatisticsCollector
-ОР1 - сводная таблица результатов
+class SummaryReport {
+    + getRequestTable(): Table
+    + getMasterTable(): Table
+}
+
+note right of SummaryReport
+ОР1 - две сводные таблицы
 в автоматическом режиме
 end note
 
 class Simulation {
     - currentTime: double
-    - sources: List<Source>
+    - sources: List~Source~
     - eventCalendar: EventCalendar
     - placementDispatcher: PlacementDispatcher
     - selectionDispatcher: SelectionDispatcher
+    - buffer: Buffer
+    - masterPool: MasterPool
     - statistics: StatisticsCollector
 
     + initialize(): void
     + step(): void
     + runStepMode(): void
     + runAutomaticMode(): void
+    + showCurrentState(): void
 
     - processEvent(event: Event): void
+    - processRequestGenerated(event: Event): void
+    - processServiceCompleted(event: Event): void
+    - scheduleNextArrival(source: Source): void
 }
 
 Source --> Request : creates
@@ -193,6 +214,7 @@ PlacementDispatcher --> StatisticsCollector
 
 SelectionDispatcher --> Buffer
 SelectionDispatcher --> MasterPool
+SelectionDispatcher --> EventCalendar
 SelectionDispatcher --> StatisticsCollector
 
 MasterPool "1" *-- "1..*" Master
@@ -207,10 +229,14 @@ Event --> Master
 
 EventCalendar "1" *-- "0..*" Event
 
+StatisticsCollector --> SummaryReport : creates
+
 Simulation "1" o-- "1..*" Source
 Simulation --> EventCalendar
 Simulation --> PlacementDispatcher
 Simulation --> SelectionDispatcher
+Simulation --> Buffer
+Simulation --> MasterPool
 Simulation --> StatisticsCollector
 
 @enduml
