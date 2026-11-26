@@ -1,4 +1,3 @@
-
 @startuml
 
 title Сервисный центр по ремонту бытовой техники\nДиаграмма классов - вариант 16
@@ -6,11 +5,13 @@ title Сервисный центр по ремонту бытовой техн�
 skinparam classAttributeIconSize 0
 
 class Source {
-    - id: int
-    - generatedCount: int
+    + id: int
+    + generated_count: int
+    + min_interval: float
+    + max_interval: float
 
-    + generateRequest(currentTime: double): Request
-    + generateNextInterval(): double
+    + generate_request(current_time: float): Request
+    + generate_next_interval(): float
 }
 
 note right of Source
@@ -20,17 +21,17 @@ note right of Source
 end note
 
 class Request {
-    - sourceId: int
-    - requestNumber: int
-    - generationTime: double
-    - bufferEntryTime: double
-    - serviceStartTime: double
-    - serviceEndTime: double
-    - status: RequestStatus
+    + source_id: int
+    + request_number: int
+    + generation_time: float
+    + buffer_entry_time: Optional~float~
+    + service_start_time: Optional~float~
+    + service_end_time: Optional~float~
+    + status: RequestStatus
 
-    + getWaitingTime(): double
-    + getServiceTime(): double
-    + getSystemTime(): double
+    + get_waiting_time(): float
+    + get_service_time(): float
+    + get_system_time(): float
 }
 
 enum RequestStatus {
@@ -42,27 +43,30 @@ enum RequestStatus {
 }
 
 class PlacementDispatcher {
-    - buffer: Buffer
-    - selectionDispatcher: SelectionDispatcher
-    - statistics: StatisticsCollector
+    + buffer: Buffer
+    + selection_dispatcher: SelectionDispatcher
+    + statistics: StatisticsCollector
+    + log: Callable
 
-    + handleRequest(request: Request, currentTime: double): void
+    + handle_request(request: Request, current_time: float): None
 }
 
 class Buffer {
-    - capacity: int
-    - slots: Request[]
-    - insertionPointer: int
+    + capacity: int
+    + slots: list
+    + insertion_pointer: int
+    - _entry_counter: int
+    - _entry_order: dict
 
-    + putByRing(request: Request, currentTime: double): BufferPutResult
-    + replaceOldest(request: Request, currentTime: double): Request
-    + takeLIFO(): Request
-    + isEmpty(): boolean
-    + isFull(): boolean
-    + getRequests(): List~Request~
-    + getInsertionPointer(): int
+    + put_by_ring(request: Request, current_time: float): BufferPutResult
+    + replace_oldest(request: Request, current_time: float): Request
+    + take_lifo(): Optional~Request~
+    + is_empty(): bool
+    + is_full(): bool
+    + get_requests(): List~Request~
+    + get_insertion_pointer(): int
 
-    - findOldest(): Request
+    - _store(index: int, request: Request, current_time: float): None
 }
 
 note right of Buffer
@@ -80,27 +84,24 @@ enum BufferPutResult {
 }
 
 class SelectionDispatcher {
-    - buffer: Buffer
-    - masterPool: MasterPool
-    - eventCalendar: EventCalendar
-    - statistics: StatisticsCollector
+    + buffer: Buffer
+    + master_pool: MasterPool
+    + event_calendar: EventCalendar
+    + statistics: StatisticsCollector
+    + log: Callable
 
-    + tryStartService(request: Request, currentTime: double): boolean
-    + onMasterReleased(master: Master, currentTime: double): void
-
-    - selectRequestFromBuffer(): Request
-    - selectFreeMaster(): Master
-    - scheduleServiceCompletion(master: Master, request: Request, completionTime: double): void
+    + try_start_service(request: Request, current_time: float): bool
+    + on_master_released(master: Master, current_time: float): None
 }
 
 class MasterPool {
-    - masters: List~Master~
-    - selectionPointer: int
+    + masters: List~Master~
+    + selection_pointer: int
 
-    + findFreeByRing(): Master
-    + hasFreeMaster(): boolean
-    + getMasters(): List~Master~
-    + getSelectionPointer(): int
+    + find_free_by_ring(): Optional~Master~
+    + has_free_master(): bool
+    + get_masters(): List~Master~
+    + get_selection_pointer(): int
 }
 
 note right of MasterPool
@@ -109,18 +110,17 @@ note right of MasterPool
 end note
 
 class Master {
-    - id: int
-    - busy: boolean
-    - currentRequest: Request
-    - busyTime: double
+    + id: int
+    + mean_service_time: float
+    + busy: bool
+    + current_request: Optional~Request~
+    + busy_time: float
+    + completed_count: int
 
-    + startService(request: Request, currentTime: double): double
-    + finishService(currentTime: double): Request
-    + isFree(): boolean
-    + getCurrentRequest(): Request
-    + getId(): int
-
-    - generateServiceTime(): double
+    + start_service(request: Request, current_time: float): float
+    + finish_service(current_time: float): Request
+    + is_free(): bool
+    + generate_service_time(): float
 }
 
 note right of Master
@@ -129,10 +129,10 @@ note right of Master
 end note
 
 class Event {
-    - time: double
-    - type: EventType
-    - request: Request
-    - master: Master
+    + time: float
+    + type: EventType
+    + request: Optional~Request~
+    + master: Optional~Master~
 }
 
 enum EventType {
@@ -141,11 +141,13 @@ enum EventType {
 }
 
 class EventCalendar {
-    - events: PriorityQueue~Event~
+    + events: list
+    - _counter: count
 
-    + addEvent(event: Event): void
-    + getNextEvent(): Event
-    + isEmpty(): boolean
+    + add_event(event: Event): None
+    + get_next_event(): Event
+    + is_empty(): bool
+    + get_events(): List~Event~
 }
 
 note right of EventCalendar
@@ -157,53 +159,94 @@ note right of EventCalendar
 end note
 
 class StatisticsCollector {
-    - generatedCount: int
-    - rejectedCount: int
-    - completedCount: int
-    - totalWaitingTime: double
-    - totalServiceTime: double
+    + generated_count: int
+    + rejected_count: int
+    + completed_count: int
+    + total_waiting_time: float
+    + total_service_time: float
+    + total_system_time: float
+    + total_waiting_time_squared: float
+    + total_service_time_squared: float
 
-    + recordGenerated(request: Request): void
-    + recordBuffered(request: Request): void
-    + recordRejected(request: Request): void
-    + recordServiceStart(request: Request): void
-    + recordServiceEnd(request: Request): void
-
-    + getRejectionProbability(): double
-    + buildSummary(): SummaryReport
+    + record_generated(request: Request): None
+    + record_buffered(request: Request): None
+    + record_rejected(request: Request): None
+    + record_service_start(request: Request): None
+    + record_service_end(request: Request): None
+    + get_rejection_probability(): float
+    + build_summary(): dict
 }
 
 class SummaryReport {
-    + getRequestTable(): Table
-    + getMasterTable(): Table
+    + summary: dict
+    + masters: List~Master~
+    + total_time: float
+    + source_id: int
+
+    + print_report(): None
+    + print_source_table(): None
+    + print_master_table(): None
 }
 
 note right of SummaryReport
-ОР1 - две сводные таблицы
-в автоматическом режиме
+ОР1 - две сводные таблицы:
+характеристики источников
+и характеристики приборов.
 end note
 
 class Simulation {
-    - currentTime: double
-    - sources: List~Source~
-    - eventCalendar: EventCalendar
-    - placementDispatcher: PlacementDispatcher
-    - selectionDispatcher: SelectionDispatcher
-    - buffer: Buffer
-    - masterPool: MasterPool
-    - statistics: StatisticsCollector
+    + max_requests: int
+    + current_time: float
+    + step_number: int
+    + sources: List~Source~
+    + event_calendar: EventCalendar
+    + placement_dispatcher: PlacementDispatcher
+    + selection_dispatcher: SelectionDispatcher
+    + buffer: Buffer
+    + master_pool: MasterPool
+    + statistics: StatisticsCollector
 
-    + initialize(): void
-    + step(): void
-    + runStepMode(): void
-    + runAutomaticMode(): void
-    + showCurrentState(): void
+    - _step_actions: List~str~
+    - _show_actions: bool
 
-    - processEvent(event: Event): void
-    - processRequestGenerated(event: Event): void
-    - processServiceCompleted(event: Event): void
-    - scheduleNextArrival(source: Source): void
+    + initialize(): None
+    + step(show_state: bool): bool
+    + run_step_mode(): None
+    + run_automatic_mode(): dict
+    + show_current_state(description: str): None
+    + show_summary(): None
+    + log_action(message: str): None
+
+    + process_event(event: Event): str
+    + process_request_generated(event: Event): str
+    + process_service_completed(event: Event): str
+    + schedule_next_arrival(source: Source): None
 }
+
+note right of Simulation
+ОД1 - пошаговый режим:
+состояние системы,
+кольцевые указатели,
+действия диспетчеров,
+календарь событий,
+текущая статистика.
+end note
+
+class "automatic_runner.py" as AutomaticRunner <<module>> {
+    + calculate_required_requests(probability: float): Optional~int~
+    + run_with_accuracy(...): Simulation
+}
+
+note right of AutomaticRunner
+Автоматический подбор
+количества заявок.
+
+Относительная точность: 10%
+Доверительная вероятность: 0.9
+
+Повторное моделирование
+с проверкой критерия остановки.
+end note
 
 Source --> Request : creates
 Request --> RequestStatus
@@ -218,25 +261,28 @@ SelectionDispatcher --> EventCalendar
 SelectionDispatcher --> StatisticsCollector
 
 MasterPool "1" *-- "1..*" Master
-Master --> Request : services
+Master --> "0..1" Request : services
 
 Buffer "1" o-- "0..*" Request
 Buffer --> BufferPutResult
 
 Event --> EventType
-Event --> Request
-Event --> Master
+Event --> "0..1" Request
+Event --> "0..1" Master
 
 EventCalendar "1" *-- "0..*" Event
 
-StatisticsCollector --> SummaryReport : creates
-
-Simulation "1" o-- "1..*" Source
+Simulation "1" o-- "1" Source
 Simulation --> EventCalendar
 Simulation --> PlacementDispatcher
 Simulation --> SelectionDispatcher
 Simulation --> Buffer
 Simulation --> MasterPool
 Simulation --> StatisticsCollector
+
+Simulation ..> SummaryReport : creates
+SummaryReport --> Master : uses statistics
+
+AutomaticRunner ..> Simulation : creates and runs
 
 @enduml
