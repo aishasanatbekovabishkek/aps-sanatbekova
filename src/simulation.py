@@ -1,3 +1,4 @@
+from .summary_report import SummaryReport
 from .buffer import Buffer
 from .event import Event, EventType
 from .event_calendar import EventCalendar
@@ -24,6 +25,8 @@ class Simulation:
         self.max_requests = max_requests
         self.current_time = 0.0
         self.step_number = 0
+        self._step_actions = []
+        self._show_actions = False
 
         self.sources = [
             Source(1, min_interval, max_interval)
@@ -41,15 +44,21 @@ class Simulation:
             self.master_pool,
             self.event_calendar,
             self.statistics,
+            log=self.log_action,
         )
 
         self.placement_dispatcher = PlacementDispatcher(
             self.buffer,
             self.selection_dispatcher,
             self.statistics,
+            log=self.log_action,
         )
 
         self.initialize()
+
+    def log_action(self, message):
+        if self._show_actions:
+            self._step_actions.append(message)
 
     def initialize(self):
         for source in self.sources:
@@ -111,9 +120,12 @@ class Simulation:
 
         raise ValueError("Неизвестный тип события")
 
-    def step(self):
+    def step(self, show_state=True):
         if self.event_calendar.is_empty():
             return False
+
+        self._step_actions.clear()
+        self._show_actions = show_state
 
         event = self.event_calendar.get_next_event()
 
@@ -125,7 +137,8 @@ class Simulation:
 
         description = self.process_event(event)
 
-        self.show_current_state(description)
+        if show_state:
+            self.show_current_state(description)
 
         return True
 
@@ -134,6 +147,11 @@ class Simulation:
         print(f"ШАГ {self.step_number}")
         print(f"Модельное время: {self.current_time:.2f}")
         print(f"Событие: {description}")
+        if self._step_actions:
+            print("\nДействия системы:")
+
+            for action in self._step_actions:
+                print(f"  {action}")
 
         print("\nИсточник:")
         for source in self.sources:
@@ -181,19 +199,53 @@ class Simulation:
         )
 
         print("\nКалендарь событий:")
+
         events = self.event_calendar.get_events()
 
         if not events:
             print("  Нет запланированных событий")
         else:
+            print("-" * 70)
+
+            print(
+                f"{'Время':>10} | "
+                f"{'Событие':<28} | "
+                f"{'Заявка':>8} | "
+                f"{'Мастер':>8}"
+            )
+
+            print("-" * 70)
+
             for event in events:
-                print(
-                    f"  {event.time:.2f}: "
-                    f"{event.type.value}"
+                if event.type == EventType.REQUEST_GENERATED:
+                    event_name = "Поступление заявки"
+                else:
+                    event_name = "Завершение обслуживания"
+
+                request_number = (
+                    event.request.request_number
+                    if event.request is not None
+                    else "-"
                 )
+
+                master_number = (
+                    event.master.id
+                    if event.master is not None
+                    else "-"
+                )
+
+                print(
+                    f"{event.time:>10.2f} | "
+                    f"{event_name:<28} | "
+                    f"{request_number:>8} | "
+                    f"{master_number:>8}"
+                )
+
+            print("-" * 70)
 
     def run_step_mode(self):
         print("=== ПОШАГОВОЕ МОДЕЛИРОВАНИЕ ===")
+        self.show_current_state("Начальное состояние системы")
 
         while not self.event_calendar.is_empty():
             command = input(
@@ -207,4 +259,20 @@ class Simulation:
             self.step()
 
         print("\n=== МОДЕЛИРОВАНИЕ ЗАВЕРШЕНО ===")
-        print(self.statistics.build_summary())
+        self.show_summary()
+
+    def run_automatic_mode(self):
+        while not self.event_calendar.is_empty():
+            self.step(show_state=False)
+
+        return self.statistics.build_summary()
+
+    def show_summary(self):
+        report = SummaryReport(
+            summary=self.statistics.build_summary(),
+            masters=self.master_pool.get_masters(),
+            total_time=self.current_time,
+            source_id=self.sources[0].id,
+        )
+
+        report.print_report()

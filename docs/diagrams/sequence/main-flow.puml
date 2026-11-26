@@ -1,10 +1,14 @@
-
 @startuml
+
+scale max 3500 height
 
 title Сервисный центр по ремонту бытовой техники\nДиаграмма последовательности - вариант 16
 
 autonumber
 
+actor "Пользователь" as User
+participant "main.py" as Main
+participant "automatic_runner.py" as Runner
 participant "Simulation" as Sim
 participant "Source" as Source
 participant "EventCalendar" as Calendar
@@ -14,6 +18,7 @@ participant "MasterPool" as Pool
 participant "Buffer" as Buffer
 participant "Master" as Master
 participant "StatisticsCollector" as Stats
+participant "SummaryReport" as Report
 
 note over Source
 ИБ - бесконечный источник
@@ -26,152 +31,277 @@ note over Master
 время обслуживания
 end note
 
-== Инициализация моделирования ==
+== Выбор режима моделирования ==
 
-Sim -> Sim: initialize()
-Sim -> Source: generateNextInterval()
-Source --> Sim: interval
-Sim -> Calendar: addEvent(REQUEST_GENERATED)
-Calendar --> Sim: Событие запланировано
+User -> Main: Выбрать режим и задать параметры
 
-== Обработка событий ==
+opt Автоматический режим
+    Main -> Runner: run_with_accuracy(...)
+    Runner -> Runner: Установить начальное N
+end
 
-loop Пока есть события и не достигнуто условие остановки
+loop Один прогон для ОД1 / повторные прогоны для ОР1
 
-    Sim -> Calendar: getNextEvent()
-    Calendar --> Sim: event
+    == Инициализация моделирования ==
 
-    Sim -> Sim: processEvent(event)
+    alt Пошаговый режим
 
-    alt event.type == REQUEST_GENERATED
+        Main -> Sim: Simulation(...)
+        Sim -> Sim: initialize()
 
-        == Поступление новой заявки ==
+    else Автоматический режим
 
-        Sim -> Source: generateRequest(currentTime)
-        Source --> Sim: request
+        Runner -> Sim: Simulation(max_requests=N, ...)
+        Sim -> Sim: initialize()
 
-        Sim -> Stats: recordGenerated(request)
-        Stats --> Sim: Заявка учтена
+    end
 
-        Sim -> Placement: handleRequest(request, currentTime)
+    Sim -> Sim: schedule_next_arrival(source)
+    Sim -> Source: generate_next_interval()
+    Source --> Sim: interval
+    Sim -> Calendar: add_event(REQUEST_GENERATED)
+    Calendar --> Sim: Событие запланировано
 
-        Placement -> Selection: tryStartService(request, currentTime)
+    alt Пошаговый режим
 
-        Selection -> Pool: findFreeByRing()
+        Main -> Sim: run_step_mode()
+        Sim -> Sim: show_current_state(...)
+        Sim -> User: Начальное состояние системы
 
-        alt Свободный мастер найден
+    else Автоматический режим
 
-            Pool -> Pool: Выбрать мастера по кольцу\nи передвинуть указатель
-            Pool --> Selection: master
+        Runner -> Sim: run_automatic_mode()
 
-            Selection -> Master: startService(request, currentTime)
-            Master -> Master: generateServiceTime()
-            Master --> Selection: serviceTime
+    end
 
-            Selection -> Calendar: addEvent(SERVICE_COMPLETED)
-            note right of Calendar
-            Время события:
-            currentTime + serviceTime
-            end note
+    == Обработка событий ==
 
-            Selection -> Stats: recordServiceStart(request)
-            Stats --> Selection: Учтено
+    loop Пока календарь не пуст и моделирование не остановлено
 
-            Selection --> Placement: true
+        opt Пошаговый режим
+            User -> Sim: Enter или q
+            break Пользователь ввёл q
+                Sim --> Main: Моделирование остановлено
+            end
+        end
 
-        else Все мастера заняты
+        Sim -> Sim: step(show_state)
+        Sim -> Calendar: get_next_event()
+        Calendar --> Sim: event
 
-            Pool --> Selection: Нет свободного мастера
-            Selection --> Placement: false
+        Sim -> Sim: Обновить модельное время
+        Sim -> Sim: process_event(event)
 
-            Placement -> Buffer: putByRing(request, currentTime)
+        alt event.type == REQUEST_GENERATED
 
-            alt Есть свободное место
+            == Поступление новой заявки ==
 
-                Buffer -> Buffer: Найти свободную ячейку\nпо кольцу
-                Buffer -> Buffer: Поместить заявку\nи передвинуть указатель
-                Buffer --> Placement: STORED
+            Sim -> Sim: process_request_generated(event)
 
-                Placement -> Stats: recordBuffered(request)
-                Stats --> Placement: Учтено
+            Sim -> Source: generate_request(current_time)
+            Source --> Sim: request
 
-            else Буфер заполнен
+            Sim -> Stats: record_generated(request)
+            Stats --> Sim: Заявка учтена
 
-                Buffer --> Placement: FULL
+            Sim -> Placement: handle_request(request, current_time)
 
-                Placement -> Buffer: replaceOldest(request, currentTime)
+            Placement -> Selection: try_start_service(request, current_time)
 
-                Buffer -> Buffer: findOldest()
-                Buffer -> Buffer: Удалить самую старую заявку\nи поместить новую
+            Selection -> Pool: find_free_by_ring()
 
-                Buffer --> Placement: rejectedRequest
+            alt Свободный мастер найден
 
-                Placement -> Stats: recordRejected(rejectedRequest)
-                Stats --> Placement: Отказ учтён
+                Pool -> Pool: Выбрать мастера по кольцу\nи передвинуть указатель
 
-                Placement -> Stats: recordBuffered(request)
-                Stats --> Placement: Учтено
+                Pool --> Selection: master
+
+                Selection -> Master: start_service(request, current_time)
+                Master -> Master: generate_service_time()
+                Master --> Selection: finish_time
+
+                Selection -> Calendar: add_event(SERVICE_COMPLETED)
+
+                note right of Calendar
+                Время события:
+                finish_time
+                end note
+
+                Selection -> Stats: record_service_start(request)
+                Stats --> Selection: Обработка завершена
+
+                Selection --> Placement: true
+
+            else Все мастера заняты
+
+                Pool --> Selection: None
+                Selection --> Placement: false
+
+                Placement -> Buffer: put_by_ring(request, current_time)
+
+                alt Есть свободное место
+
+                    Buffer -> Buffer: Найти свободную ячейку\nпо кольцу
+
+                    Buffer -> Buffer: Поместить заявку\nи передвинуть указатель
+
+                    Buffer --> Placement: STORED
+
+                    Placement -> Stats: record_buffered(request)
+                    Stats --> Placement: Обработка завершена
+
+                else Буфер заполнен
+
+                    Buffer --> Placement: FULL
+
+                    Placement -> Buffer: replace_oldest(request, current_time)
+
+                    Buffer -> Buffer: Найти самую старую заявку
+
+                    Buffer -> Buffer: Удалить старую заявку,\nпоместить новую\nи передвинуть указатель
+
+                    Buffer --> Placement: rejected_request
+
+                    Placement -> Stats: record_rejected(rejected_request)
+                    Stats --> Placement: Отказ учтён
+
+                    Placement -> Stats: record_buffered(request)
+                    Stats --> Placement: Обработка завершена
+
+                end
 
             end
 
+            Placement --> Sim: Обработка завершена
+
+            Sim -> Sim: schedule_next_arrival(source)
+
+            alt generated_count < max_requests
+
+                Sim -> Source: generate_next_interval()
+                Source --> Sim: interval
+
+                Sim -> Calendar: add_event(REQUEST_GENERATED)
+
+                note right of Calendar
+                Время следующей заявки:
+                current_time + interval
+                end note
+
+            else Достигнуто заданное количество заявок
+
+                Sim -> Sim: Не планировать новые поступления
+
+                note over Sim, Calendar
+                Оставшиеся заявки продолжают
+                обслуживаться до опустошения
+                календаря событий.
+                end note
+
+            end
+
+        else event.type == SERVICE_COMPLETED
+
+            == Завершение обслуживания ==
+
+            Sim -> Sim: process_service_completed(event)
+
+            Sim -> Master: finish_service(current_time)
+            Master --> Sim: completed_request
+
+            Sim -> Stats: record_service_end(completed_request)
+            Stats --> Sim: Завершение учтено
+
+            Sim -> Selection: on_master_released(master, current_time)
+
+            Selection -> Buffer: is_empty()
+
+            alt Буфер не пуст
+
+                Buffer --> Selection: false
+
+                Selection -> Buffer: take_lifo()
+
+                Buffer -> Buffer: Найти последнюю поступившую\nзаявку и удалить её
+
+                Buffer --> Selection: request
+
+                Selection -> Selection: try_start_service(request, current_time)
+
+                Selection -> Pool: find_free_by_ring()
+
+                Pool -> Pool: Выбрать свободного мастера\nпо кольцу и передвинуть указатель
+
+                Pool --> Selection: master
+
+                Selection -> Master: start_service(request, current_time)
+                Master -> Master: generate_service_time()
+                Master --> Selection: finish_time
+
+                Selection -> Calendar: add_event(SERVICE_COMPLETED)
+
+                Selection -> Stats: record_service_start(request)
+                Stats --> Selection: Обработка завершена
+
+            else Буфер пуст
+
+                Buffer --> Selection: true
+
+                Selection -> Selection: Нет заявок для обслуживания
+
+            end
+
+            Selection --> Sim: Обработка завершена
+
         end
 
-        Sim -> Source: generateNextInterval()
-        Source --> Sim: interval
+        opt Пошаговый режим
 
-        Sim -> Calendar: addEvent(REQUEST_GENERATED)
-        note right of Calendar
-        Время следующей заявки:
-        currentTime + interval
+            Sim -> Sim: show_current_state(description)
+
+            Sim -> Calendar: get_events()
+            Calendar --> Sim: events
+
+            Sim -> Stats: get_rejection_probability()
+            Stats --> Sim: probability
+
+            Sim -> User: Модельное время, действия диспетчеров,\nсостояние источника, буфера и мастеров,\nуказатели, статистика, календарь событий
+
+        end
+
+    end
+
+    == Завершение прогона ==
+
+    alt Автоматический режим
+
+        Sim -> Stats: build_summary()
+        Stats --> Sim: summary
+
+        Sim --> Runner: summary
+
+        Runner -> Runner: calculate_required_requests(probability)
+
+        alt Критерий точности выполнен
+
+            Runner -> Runner: Завершить подбор N
+
+        else Достигнут предел количества заявок
+
+            Runner -> Runner: Сообщить, что точность не подтверждена
+
+        else Требуется дополнительный прогон
+
+            Runner -> Runner: Увеличить N
+
+        end
+
+    else Пошаговый режим
+
+        note over Sim
+        После полного завершения
+        моделирования формируется отчёт.
         end note
-
-    else event.type == SERVICE_COMPLETED
-
-        == Завершение обслуживания ==
-
-        Sim -> Master: finishService(currentTime)
-        Master --> Sim: completedRequest
-
-        Sim -> Stats: recordServiceEnd(completedRequest)
-        Stats --> Sim: Завершение учтено
-
-        Sim -> Selection: onMasterReleased(master, currentTime)
-
-        Selection -> Buffer: isEmpty()
-
-        alt Буфер не пуст
-
-            Buffer --> Selection: false
-
-            Selection -> Buffer: takeLIFO()
-            Buffer -> Buffer: Найти последнюю поступившую\nзаявку и удалить её
-            Buffer --> Selection: request
-
-            Selection -> Pool: findFreeByRing()
-            Pool -> Pool: Выбрать свободного мастера\nпо кольцу
-            Pool --> Selection: master
-
-            Selection -> Master: startService(request, currentTime)
-            Master -> Master: generateServiceTime()
-            Master --> Selection: serviceTime
-
-            Selection -> Calendar: addEvent(SERVICE_COMPLETED)
-            note right of Calendar
-            Время события:
-            currentTime + serviceTime
-            end note
-
-            Selection -> Stats: recordServiceStart(request)
-            Stats --> Selection: Учтено
-
-        else Буфер пуст
-
-            Buffer --> Selection: true
-            Selection -> Selection: Нет заявок для обслуживания
-
-        end
-
-        Selection --> Sim: Обработка завершена
 
     end
 
@@ -179,15 +309,43 @@ end
 
 == Результаты моделирования ==
 
-Sim -> Stats: buildSummary()
-Stats --> Sim: SummaryReport
+opt Автоматический режим
+    Runner --> Main: simulation
+    Main -> Sim: show_summary()
+end
 
-note over Sim, Stats
-ОР1 - две сводные таблицы
-в автоматическом режиме
+opt Пошаговый режим завершён полностью
 
-ОД1 - пошаговый вывод состояния
-буфера, мастеров и указателей
+    Sim -> Sim: show_summary()
+
+end
+
+opt Моделирование завершено без досрочного выхода
+
+    Sim -> Stats: build_summary()
+    Stats --> Sim: summary
+
+    Sim -> Pool: get_masters()
+    Pool --> Sim: masters
+
+    Sim -> Report: SummaryReport(summary, masters, total_time, source_id)
+
+    Sim -> Report: print_report()
+
+    Report -> Report: print_source_table()
+    Report -> Report: print_master_table()
+
+    Report -> User: Две итоговые таблицы
+
+end
+
+note over Sim, Report
+ОР1 - две сводные таблицы:
+характеристики источников
+и характеристики приборов.
+
+ОД1 - пошаговый вывод
+состояния системы.
 end note
 
 @enduml

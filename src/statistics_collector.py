@@ -11,6 +11,9 @@ class StatisticsCollector:
         self.total_service_time = 0.0
         self.total_system_time = 0.0
 
+        self.total_waiting_time_squared = 0.0
+        self.total_service_time_squared = 0.0
+
     def record_generated(self, request: Request) -> None:
         self.generated_count += 1
 
@@ -26,9 +29,16 @@ class StatisticsCollector:
     def record_service_end(self, request: Request) -> None:
         self.completed_count += 1
 
-        self.total_waiting_time += request.get_waiting_time()
-        self.total_service_time += request.get_service_time()
-        self.total_system_time += request.get_system_time()
+        waiting_time = request.get_waiting_time()
+        service_time = request.get_service_time()
+        system_time = request.get_system_time()
+
+        self.total_waiting_time += waiting_time
+        self.total_service_time += service_time
+        self.total_system_time += system_time
+
+        self.total_waiting_time_squared += waiting_time ** 2
+        self.total_service_time_squared += service_time ** 2
 
     def get_rejection_probability(self) -> float:
         if self.generated_count == 0:
@@ -41,10 +51,30 @@ class StatisticsCollector:
             average_waiting = 0.0
             average_service = 0.0
             average_system = 0.0
+            variance_waiting = 0.0
+            variance_service = 0.0
         else:
-            average_waiting = self.total_waiting_time / self.completed_count
-            average_service = self.total_service_time / self.completed_count
-            average_system = self.total_system_time / self.completed_count
+            average_waiting = (
+                self.total_waiting_time / self.completed_count
+            )
+            average_service = (
+                self.total_service_time / self.completed_count
+            )
+            average_system = (
+                self.total_system_time / self.completed_count
+            )
+
+            variance_waiting = max(
+                0.0,
+                self.total_waiting_time_squared / self.completed_count
+                - average_waiting ** 2,
+            )
+
+            variance_service = max(
+                0.0,
+                self.total_service_time_squared / self.completed_count
+                - average_service ** 2,
+            )
 
         return {
             "generated": self.generated_count,
@@ -54,4 +84,6 @@ class StatisticsCollector:
             "average_waiting": average_waiting,
             "average_service": average_service,
             "average_system": average_system,
+            "variance_waiting": variance_waiting,
+            "variance_service": variance_service,
         }
